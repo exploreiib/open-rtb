@@ -1,0 +1,4 @@
+{"biddersInfo":[{"biddername":"GOOGLE","url":"http://localhost:8080/bid2"},
+  {"biddername":"FB","url":"http://localhost:8080/bid1"},
+  {"biddername":"TWITTER","url":"http://localhost:8080/bid3"},
+  {"biddername":"AMAZON","url":"http://localhost:8080/bid"}]}
