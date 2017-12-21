@@ -16,6 +16,7 @@ const moment = require('moment');
 const uuidv1 = require('uuid/v1');
 const fetch = require('node-fetch');
 const mongoose = require("mongoose");
+var mockResponse = require('./mocks/mockResponse');
 
 //
 // Logger configuration
@@ -31,11 +32,12 @@ const prettyprint_format = (obj) => JSON.stringify(obj, null, 2);
 
 let impCounter = 0;
 var jsonParser = bodyParser.json();
-var urlencodedParser = bodyParser.urlencoded({ extended: false })
-var bidderInfoList = require("./bidder_config.json");
+var urlencodedParser = bodyParser.urlencoded({ extended: false });
+var bidderInfoList;
+
 
 //controllers
-var impressionController = require("./controllers/impressionController");
+var openrtbDBController = require("./controllers/openrtbDBController");
 
 
 if (!fs.existsSync(log_directory)) {
@@ -74,17 +76,25 @@ const openRtbAdaptor = (req, res) => {
 		
 
     const queryData = url.parse(req.url, true).query;
+    logger.debug('Request received from Publisher Channel::',queryData);
+
     //Stpe1: Create OpenRTB BidRequest
     //Step2: Invoke Bidders passing BidRequest
-    impressionController.getImpression()
 
-    impressionController.getImpression(queryData.id).then(function (impressionData) {
-		build_json_bidrequest(bidRequest,impressionData).then(request => {
-	           logger.debug('bidRequest before invoking bidders==>',request);			   
+    openrtbDBController.getImpression(queryData.id).then(function (impressionData) {
+
+        logger.debug('impressionData from db is =>',impressionData);
+
+        build_json_bidrequest(bidRequest,impressionData).then(request => {
+	           logger.debug('bidRequest before invoking bidders==>',JSON.stringify(request));
 			   call_bidder.callBidder(request).then(adresponse => {
-			   logger.debug('final adresponse ==>',adresponse);			   
+			   logger.debug('final adresponse ==>',adresponse);
 
-			          res.send(adresponse);
+                   res.send(adresponse);
+
+
+
+
 			   }).catch(error => {
                 logger.error('Rejecting Promise. Error calling Bidder', error);
 				res.json(error);
@@ -110,9 +120,7 @@ const build_json_bidrequest = (bidRequest,impressionData) => {
                 .timestamp(moment.utc().format())
                 .id(uuidv1())
                 .at(2)
-                .imp([
-                    	build_imp_object('BANNER',queryData.width,queryData.height,queryData.bidfloor)
-                    ])
+                .imp(build_imp_object(impressionData))
                 .build());
   
  
@@ -124,9 +132,38 @@ const build_json_bidrequest = (bidRequest,impressionData) => {
 // Helper function to create impression json object like Banner/Vedio/Native 
 // -----------------------------------------------------------------------------
 const build_imp_object = (impressionData) => {
-	//impCounter = impCounter+1;
+    var imp = [];
+    var impBuilder = openrtb.getBuilder({
+        builderType: 'imp'
+    });
+
+    impBuilder.bidfloor((impressionData.bidfloor)?impressionData.bidfloor:0);
+    impBuilder.id(impressionData.imp_id);
+
 	var typeOfImp = impressionData.imp_type;
-	if(typeOfImp === 'BANNER'){//Create BANNER object
+
+    if(typeOfImp === 'BANNER'){
+
+        var bannerBuilder = openrtb.getBuilder({
+            builderType: 'banner'
+        });
+        bannerBuilder.w(impressionData.imp_dimension.w).h(impressionData.imp_dimension.h);
+        impBuilder.banner(bannerBuilder.build());
+
+    }else if(typeOfImp === 'VEDIO'){
+        var vedioBuilder = openrtb.getBuilder({
+            builderType: 'video'
+        });
+        var mimes = ["video/x-flv",
+            "video/mp4",
+            "application/x-shockwave-flash",
+            "application/javascript"];
+
+        vedioBuilder.mimes(mimes).w(impressionData.imp_dimension.w).h(impressionData.imp_dimension.h);
+        impBuilder.video(vedioBuilder.build());
+    }
+
+	/*if(typeOfImp === 'BANNER'){//Create BANNER object
 		
 	    return{  
 		  "id":impressionData.imp_id,
@@ -135,10 +172,32 @@ const build_imp_object = (impressionData) => {
         };
 			
 	}else if(typeOfImp === 'VEDIO'){//Create VEDIO Object
-	
-	return{
-		    "id":impressionData.imp_id,
-	        "vedio": (impressionData.imp_dimension)?impressionData.imp_dimension:null,
+	console.log("inside creating VEDIO object::"+JSON.stringify((impressionData.imp_dimension)));
+
+        var vedioBuilder = openrtb.getBuilder({
+            builderType: 'video'
+        });
+
+        var mimes = ["video/x-flv",
+            "video/mp4",
+            "application/x-shockwave-flash",
+            "application/javascript"];
+
+        vedioBuilder.mimes(mimes).w(640).h(480);
+
+        return{
+		    "id": impressionData.imp_id,
+	        //"vedio": (impressionData.imp_dimension)? JSON.stringify(impressionData.imp_dimension):null,
+            "vedio": {
+              "w": 640,//Width of the player in pixels, for example
+              "h": 480//Height of the player in pixels, for example
+              /*"mimes":[
+                "video/x-flv",
+                "video/mp4",
+                "application/x-shockwave-flash",
+                "application/javascript"
+              ]*/
+      /*      },
             "bidfloor": (impressionData.bidfloor)?impressionData.bidfloor:0
     };
 		
@@ -169,7 +228,10 @@ const build_imp_object = (impressionData) => {
           "bidfloor": (impressionData.bidfloor)?impressionData.bidfloor:0
         };
 
-    }	
+    }*/
+console.log("impression object is ::"+ impBuilder.build() )
+    imp[0] = impBuilder.build();
+    return imp;
 	   
 };
 
@@ -202,28 +264,48 @@ fetch(url, options)
   			     logger.debug('sorry..Bid response is empty===>');
    		  	     call_bidder.currentBidderIndex = call_bidder.currentBidderIndex+1;
 				  
-				 if(call_bidder.currentBidderIndex < bidderInfoList.biddersInfo.length){
+				 if(call_bidder.currentBidderIndex < bidderInfoList.length){
   				    resolve(call_bidder.callBidder(bidrequest));
 				 }else{							  
 				   logger.debug('No more bidders available..serve default ad...');
 				 }
 			  
 		}  
-    }).then(function(json) {
+    }).then(function(res) {
+    logger.debug('Bid response is ===>',res);
+    if(res){
+        if(call_bidder.chekcForBidEmpty(res)){
+            logger.debug('sorry..Bid response is empty===>');
+            call_bidder.currentBidderIndex = call_bidder.currentBidderIndex+1;
+
+            if(call_bidder.currentBidderIndex < bidderInfoList.length){
+                resolve(call_bidder.callBidder(bidrequest));
+            }else{
+                logger.debug('No more bidders available..serve default ad...');
+            }
+        }else{
+
+
+            var adm = res.seatbid[0].bid[0].adm;
+            logger.debug('ADM IS ...',adm);
+
+            resolve(adm);
+        }
+        /*then(function(json) {
   	    logger.debug('Bid response is ===>',json);
 		if(json){
 		if(call_bidder.chekcForBidEmpty(json)){
 			logger.debug('sorry..Bid response is empty===>');
    		  	call_bidder.currentBidderIndex = call_bidder.currentBidderIndex+1;
 				  
-			if(call_bidder.currentBidderIndex < bidderInfoList.biddersInfo.length){
+			if(call_bidder.currentBidderIndex < bidderInfoList.length){
   			    resolve(call_bidder.callBidder(bidrequest));
 			}else{							  
 			   logger.debug('No more bidders available..serve default ad...');
 			}
 		}else{	
 		  resolve(json);
-		}
+		}*/
 	}		
     }).catch(err => {
 		 			  	    logger.debug('error inside call bidder ===>',err);
@@ -236,12 +318,12 @@ fetch(url, options)
 	},
 
 	getBidderUrl: function(index){
-		logger.debug('try Bidder  url..===>',bidderInfoList.biddersInfo[index].url);
-		return bidderInfoList.biddersInfo[index].url;
+		logger.debug('try Bidder  url..===>',bidderInfoList[index].bidder_url);
+		return bidderInfoList[index].bidder_url;
 	},
 	
 	chekcForBidEmpty: function(bidResponse){
-		let bidResponseObj =  JSON.parse(bidResponse);
+		let bidResponseObj =  bidResponse;//JSON.parse(bidResponse.stringify());
 		                  if(!bidResponseObj ||  !bidResponseObj.seatbid || bidResponseObj.seatbid.length === 0 || (bidResponseObj.nbr &&    bidResponseObj.nbr > 0 )){
 	                          return true;	
 	                      }else{		
@@ -289,7 +371,10 @@ const build_user_json_object = (userid ) => {
 const construct_bid_response = (bidRequest) =>  {
 	
     return new Promise ((resolve, reject) => {
-			var bidResponseBuilder = openrtb.getBuilder({
+        mockResponse.seatbid[0].bid[0].impid =  bidRequest.imp[0].id;
+    mockResponse.seatbid[0].bid[0].price = bidRequest.imp[0].bidfloor;
+    resolve(mockResponse);
+	/*		var bidResponseBuilder = openrtb.getBuilder({
     builderType: 'bidResponse'
   });
   
@@ -297,37 +382,42 @@ const construct_bid_response = (bidRequest) =>  {
   .timestamp(moment.utc().format())
   .status(1)
   .id('1234567890')
-  .seatbid([
-    {
- "bid": [
-         {
-           "id": "1",
-           "impid": bidRequest.imp[0].id,
-           "price": bidRequest.imp[0].bidfloor,
-           "adid": "314",
-           "cid": "42",
-           "cat": ["IAB12"],
-           "language": "en",
-           "burl":"https://adserver.com/imp?impid=102&winprice=${AUCTION_PRICE}",
-           "adm": "<a href=\"http://adserver.com/click?adid=12345&tracker=${CLICK_URL:URLENCODE}\"><img src=\"http://image1.cdn.com/impid=102\"/></a>",
-           "nurl": "http://adserver.com/winnotice?impid=102&winprice=${AUCTION_PRICE}",
-           "iurl": "http://adserver.com/preview?crid=314",
-           "adomain": [
-             "advertiserdomain.com"
-           ],
-           "ext": {
-             "advertiser_name": "Coca-Cola",
-             "agency_name": "CC-advertising"
-           }
-         }
-       ],
-       "seat": "4"
-    }
-  ])
+  .seatbid(build_seatbid_object(bidRequest))
   .build());
-  
- 
+*/
  });
+};
+
+
+
+//
+// Helper function to create seatbid json object
+// -----------------------------------------------------------------------------
+const build_seatbid_object = (bidRequest) => {
+    var bid = [];
+    var seatbid = [];
+
+
+    var bidBuilder = openrtb.getBuilder({
+        builderType: 'bid'
+    });
+
+    bidBuilder.id(uuidv1());
+    bidBuilder.impid(bidRequest.imp[0].id);
+    bidBuilder.price(bidRequest.imp[0].bidfloor);
+    bidBuilder.clearPrice(bidRequest.imp[0].bidfloor);
+    bidBuilder.adm("<a href=\"http://adserver.com/click?adid=12345&tracker=${CLICK_URL:URLENCODE}\"><img src=\"http://image1.cdn.com/impid=102\"/></a>");
+    bidBuilder.nurl("http://adserver.com/winnotice?impid=102&winprice=${AUCTION_PRICE}");
+    bid[0] = bidBuilder.build();
+
+    var seatBidBuilder = openrtb.getBuilder({
+        builderType: 'seatbid'
+    });
+
+    seatBidBuilder.bid(bid);
+    seatbid[0] = seatBidBuilder.build();
+    return seatbid;
+
 };
 
 	
@@ -341,7 +431,7 @@ app.get('/openrtb', urlencodedParser,openRtbAdaptor);
 app.post('/bid',jsonParser,function(bidreq, bidres) {
 
 			construct_bid_response(bidreq.body).then(response => {
-			    return bidres.json(response.stringify());
+			    return bidres.send(response);
 			   }).catch(error => {
                 logger.error('Rejecting Promise. Error calling construct_bid_response', error);
 				bidres.json(error);
@@ -380,4 +470,21 @@ var listener = app.listen(8080, function(){
 });
 
 // Connect to mongodb database
-mongoose.connect('mongodb://localhost:27017/rtbframework');
+mongoose.connect('mongodb://localhost:27017/openrtb_db',{ useMongoClient: true });
+
+openrtbDBController.loadBidders().then(function (bidders) {
+    bidderInfoList = bidders;
+    //console.log("bidderInfoList ::"+bidderInfoList);
+    console.log("bidderInfoList length::"+bidderInfoList.length);
+});
+
+const vedio_mimetypes = () => {
+    console.log("inside vedio_mimetypes.... ");
+    return {
+             "mimes":[
+                  "video/x-flv",
+                  "video/mp4",
+                  "video/x-ms-wmv"
+             ]
+        };
+}

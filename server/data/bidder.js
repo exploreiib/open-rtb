@@ -1,6 +1,7 @@
 var mongoose = require("mongoose");
+var Schema = mongoose.Schema;
 
-var BidderDetailsSchema = new mongoose.Schema({
+var BidderDetailsSchema = Schema({
   bidder_id : String,	
   bidder_name: String,
   bidder_url: String,

@@ -1,6 +1,6 @@
 var mongoose = require("mongoose");
-
-var ImpressionDetailsSchema = new mongoose.Schema({
+var Schema = mongoose.Schema;
+var ImpressionDetailsSchema = Schema({
   imp_id : String,	
   publisher_id: String,
   publisher_name: String,
