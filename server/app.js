@@ -78,6 +78,9 @@ const openRtbAdaptor = (req, res) => {
     const queryData = url.parse(req.url, true).query;
     logger.debug('Request received from Publisher Channel::',queryData);
 
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+
     //Stpe1: Create OpenRTB BidRequest
     //Step2: Invoke Bidders passing BidRequest
 
