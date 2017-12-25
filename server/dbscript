@@ -1,0 +1,85 @@
+use openrtb_db;
+db.createCollection("impressions");
+db.createCollection("bidders");
+db.impressions.insert({imp_id : 'IMPID01',
+  publisher_id: 'PUB01',
+  publisher_name: 'PUBLISHER ONE',
+  imp_type: 'BANNER',
+  imp_dimension: { "w":600,"h":300},
+  publisher_source: 'SITE',
+  bidfloor: 0});
+
+db.impressions.insert({imp_id : 'IMPID02',
+  publisher_id: 'PUB01',
+  publisher_name: 'PUBLISHER ONE',
+  imp_type: 'VEDIO',
+  imp_dimension: {
+                "w":640,//Width of the player in pixels, for example
+                "h":480
+		    },
+  publisher_source: 'APP',
+  bidfloor: 0.2});
+
+db.impressions.insert({imp_id : 'IMPID03',
+  publisher_id: 'PUB01',
+  publisher_name: 'PUBLISHER ONE',
+  imp_type: 'VEDIO',
+  imp_dimension: null,
+  publisher_source: 'APP',
+  bidfloor: 0.2});
+
+
+
+db.impressions.insert({imp_id : 'IMPID04',
+  publisher_id: 'PUB01',
+  publisher_name: 'PUBLISHER ONE',
+  imp_type: 'NATIVE',
+  imp_dimension: {
+               "ver": 1,
+               "layout": 6,
+               "assets": [
+                       { "id": 0, "req": 1, "title": { "len": 25 } },
+                       { "id": 1, "req": 1, "img": { "type": 3, "wmin": 100, "hmin": 100 } },
+                       { "id": 3, "req": 0, "data": { "type": 2, "len": 90 } }
+                    ]
+               },
+  publisher_source: 'APP',
+  bidfloor: 0.2});
+
+  db.bidders.insert({
+  bidder_id: 'BID_ID_01',
+  bidder_name: 'GOOGLE',
+  bidder_url: 'http://localhost:8080/bid2',
+  bidder_priority: 4
+ });
+
+   db.bidders.insert({
+  bidder_id: 'BID_ID_02',
+  bidder_name: 'FB',
+  bidder_url: 'http://localhost:8080/bid3',
+  bidder_priority: 2
+ });
+
+    db.bidders.insert({
+  bidder_id: 'BID_ID_03',
+  bidder_name: 'AMAZON',
+  bidder_url: 'http://localhost:8080/bid1',
+  bidder_priority: 3
+ });
+
+
+     db.bidders.insert({
+  bidder_id: 'BID_ID_04',
+  bidder_name: 'LOCAL',
+  bidder_url: 'http://localhost:8080/bid',
+  bidder_priority: 1
+ });
+
+
+
+     db.bidders.insert({
+  bidder_id: 'BID_ID_05',
+  bidder_name: 'AMAZON',
+  bidder_url: 'http://bidder.mamrtb.com/rtb/bid/GlobalAdSpace',
+  bidder_priority: 0
+ });
