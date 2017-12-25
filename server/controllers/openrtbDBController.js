@@ -14,8 +14,6 @@ module.exports = {
 
                 reject(err);
             } else {
-                //console.log("impression is::" + imp);
-
                 resolve(imp);
             }
         });

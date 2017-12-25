@@ -16,7 +16,9 @@ const moment = require('moment');
 const uuidv1 = require('uuid/v1');
 const fetch = require('node-fetch');
 const mongoose = require("mongoose");
+const requestHelper = require('request');
 var mockResponse = require('./mocks/mockResponse');
+
 
 //
 // Logger configuration
@@ -69,7 +71,7 @@ const logger = new (winston.Logger)({
 let bidRequest; 
 
 //
-// Logic that handles the sms endpoint.
+// Logic that handles the Openrtb request & response orchestration.
 // -----------------------------------------------------------------------------
 const openRtbAdaptor = (req, res) => {
     logger.debug('Request received from Publisher Channel');
@@ -86,18 +88,13 @@ const openRtbAdaptor = (req, res) => {
 
     openrtbDBController.getImpression(queryData.id).then(function (impressionData) {
 
-        logger.debug('impressionData from db is =>',impressionData);
+        logger.debug('impressionData from db is =>',impressionData.imp_dimension);
 
         build_json_bidrequest(bidRequest,impressionData).then(request => {
 	           logger.debug('bidRequest before invoking bidders==>',JSON.stringify(request));
 			   call_bidder.callBidder(request).then(adresponse => {
 			   logger.debug('final adresponse ==>',adresponse);
-
                    res.send(adresponse);
-
-
-
-
 			   }).catch(error => {
                 logger.error('Rejecting Promise. Error calling Bidder', error);
 				res.json(error);
@@ -111,7 +108,9 @@ const openRtbAdaptor = (req, res) => {
 	
 };
 
-
+//
+// Helper function to create bidrequest object
+// -----------------------------------------------------------------------------
 const build_json_bidrequest = (bidRequest,impressionData) => {
     return new Promise ((resolve, reject) => {
 		//logger.debug('Inside build_json_bidrequest----');
@@ -119,17 +118,23 @@ const build_json_bidrequest = (bidRequest,impressionData) => {
              builderType: 'bidRequest'
         });
   
-            resolve(bidRequestBuilder
+            bidRequestBuilder
                 .timestamp(moment.utc().format())
                 .id(uuidv1())
                 .at(2)
-                .imp(build_imp_object(impressionData))
-                .build());
+                .imp(build_imp_object(impressionData));
+                if(build_site_object(impressionData)){
+                    bidRequestBuilder.site(build_site_object(impressionData));
+                }
+                if(build_app_object(impressionData)){
+                    bidRequestBuilder.app(build_app_object(impressionData));
+                }
+
+                 resolve(bidRequestBuilder.build());
   
  
  });
 };
-
 
 //
 // Helper function to create impression json object like Banner/Vedio/Native 
@@ -150,7 +155,12 @@ const build_imp_object = (impressionData) => {
         var bannerBuilder = openrtb.getBuilder({
             builderType: 'banner'
         });
-        bannerBuilder.w(impressionData.imp_dimension.w).h(impressionData.imp_dimension.h);
+
+        if(impressionData.imp_dimension.format){
+          //It need to enhance existing openrtb Node module for including this field
+       }else {
+            bannerBuilder.w(impressionData.imp_dimension.w).h(impressionData.imp_dimension.h);
+        }
         impBuilder.banner(bannerBuilder.build());
 
     }else if(typeOfImp === 'VEDIO'){
@@ -159,87 +169,74 @@ const build_imp_object = (impressionData) => {
         });
         var mimes = ["video/x-flv",
             "video/mp4",
+            "video/x-ms-wmv",
             "application/x-shockwave-flash",
             "application/javascript"];
 
         vedioBuilder.mimes(mimes).w(impressionData.imp_dimension.w).h(impressionData.imp_dimension.h);
         impBuilder.video(vedioBuilder.build());
+    }else if(typeOfImp === 'NATIVE'){
+        var nativeBuilder = openrtb.getBuilder({
+            builderType: 'native'
+        });
+        nativeBuilder.request(impressionData.imp_dimension.toString());
+        impBuilder.native(nativeBuilder.build());
     }
 
-	/*if(typeOfImp === 'BANNER'){//Create BANNER object
-		
-	    return{  
-		  "id":impressionData.imp_id,
-		  "banner":(impressionData.imp_dimension)?impressionData.imp_dimension:null,
-          "bidfloor": (impressionData.bidfloor)?impressionData.bidfloor:0
-        };
-			
-	}else if(typeOfImp === 'VEDIO'){//Create VEDIO Object
-	console.log("inside creating VEDIO object::"+JSON.stringify((impressionData.imp_dimension)));
-
-        var vedioBuilder = openrtb.getBuilder({
-            builderType: 'video'
-        });
-
-        var mimes = ["video/x-flv",
-            "video/mp4",
-            "application/x-shockwave-flash",
-            "application/javascript"];
-
-        vedioBuilder.mimes(mimes).w(640).h(480);
-
-        return{
-		    "id": impressionData.imp_id,
-	        //"vedio": (impressionData.imp_dimension)? JSON.stringify(impressionData.imp_dimension):null,
-            "vedio": {
-              "w": 640,//Width of the player in pixels, for example
-              "h": 480//Height of the player in pixels, for example
-              /*"mimes":[
-                "video/x-flv",
-                "video/mp4",
-                "application/x-shockwave-flash",
-                "application/javascript"
-              ]*/
-      /*      },
-            "bidfloor": (impressionData.bidfloor)?impressionData.bidfloor:0
-    };
-		
-	}else if(typeOfImp === 'NATIVE'){//Create NATIVE Object
-	
-	 return{
-		  "id":impressionData.imp_id,
-         "native":{
-            "request": {
-               "ver": 1,
-               "layout": 6,
-               "assets": [
-                       { "id": 0, "req": 1, "title": { "len": 25 } }, 
-                       { "id": 1, "req": 1, "img": { "type": 3, "wmin": 100, "hmin": 100 } },
-                       { "id": 3, "req": 0, "data": { "type": 2, "len": 90 } }
-                    ]
-               }
-        },
-	  
-            "bidfloor": (impressionData.bidfloor)?impressionData.bidfloor:0
-
-    };
-		
-	}else{//Create BANNER Object as default , if no typeOfImpression passed
-	    return{  
-		  "id":impressionData.imp_id,
-		  "banner":(impressionData.imp_dimension)?impressionData.imp_dimension:null,
-          "bidfloor": (impressionData.bidfloor)?impressionData.bidfloor:0
-        };
-
-    }*/
-console.log("impression object is ::"+ impBuilder.build() )
+    console.log("impression object is ::"+ (impBuilder.build()).stringify() );
     imp[0] = impBuilder.build();
     return imp;
 	   
 };
+//
+// Helper function to create site object
+// -----------------------------------------------------------------------------
 
- 
- 
+const build_site_object = (impressionData) => {
+    if(impressionData.publisher_source && impressionData.publisher_source === 'SITE') {
+        return {
+            "id": "SSPid_1345135123",
+            "name": "Site ABCD",
+            "domain": "siteabcd.com",
+            "cat": [
+                "IAB2-1",
+                "IAB2-2"
+            ],
+            "page": "http://siteabcd.com/page.htm",
+            "ref": "http://referringsite.com/referringpage.htm",
+            "privacypolicy": 1,
+            "publisher": {"id": "SSPid_12345", "name": "Publisher A"}
+
+        }
+    }else{
+
+        return null;
+    }
+}
+
+
+const build_app_object = (impressionData) => {
+    if(impressionData.publisher_source && impressionData.publisher_source === 'APP') {
+        return {
+                "id":"adaptv_",
+                "publisher":{
+                    "name":"",
+                    "id":"adaptv_11690"
+                },
+                "storeurl":"https://play.google.com/store/apps/details?id=com.zynga.looney",
+                "bundle":"com.zynga.looney",
+                "cat":[
+                    "IAB1"
+                ],
+                "name":"looney tunes dash!"
+            }
+
+
+    }else{
+
+        return null;
+    }
+}
  const call_bidder =  {	
 	
 	callBidder: function(bidrequest){
@@ -289,32 +286,15 @@ fetch(url, options)
         }else{
 
 
-            var adm = res.seatbid[0].bid[0].adm;
-            logger.debug('ADM IS ...',adm);
+            process_bid_response(bidrequest,res).then(adcontent => {
+                resolve(adcontent);
+            });
 
-            resolve(adm);
         }
-        /*then(function(json) {
-  	    logger.debug('Bid response is ===>',json);
-		if(json){
-		if(call_bidder.chekcForBidEmpty(json)){
-			logger.debug('sorry..Bid response is empty===>');
-   		  	call_bidder.currentBidderIndex = call_bidder.currentBidderIndex+1;
-				  
-			if(call_bidder.currentBidderIndex < bidderInfoList.length){
-  			    resolve(call_bidder.callBidder(bidrequest));
-			}else{							  
-			   logger.debug('No more bidders available..serve default ad...');
-			}
-		}else{	
-		  resolve(json);
-		}*/
-	}		
+  	}
     }).catch(err => {
-		 			  	    logger.debug('error inside call bidder ===>',err);
-				  	
-		
-	  });
+        logger.debug('error inside call bidder ===>',err);
+    });
      
     });		
      
@@ -340,6 +320,7 @@ fetch(url, options)
 		                          return true;
 
                        	   if(bidResponse.status === 204) return true;
+        if(bidResponse.status === 400) return true;
 
 							return false;   
 	},
@@ -350,13 +331,12 @@ fetch(url, options)
  }
 
 //
-// Helper function to send json to back-end
+// Helper function to ceate user object
 // -----------------------------------------------------------------------------
 const build_user_json_object = (userid ) => {
 {//No field is manadatory..enite user object is optional
    return{
-	  
-              "id":uuidv1(),
+	          "id":uuidv1(),
               "buyeruid":uuidv1(),
               "keywords":"sports, entertainment",
               "yob":1976,
@@ -375,19 +355,8 @@ const construct_bid_response = (bidRequest) =>  {
 	
     return new Promise ((resolve, reject) => {
         mockResponse.seatbid[0].bid[0].impid =  bidRequest.imp[0].id;
-    mockResponse.seatbid[0].bid[0].price = bidRequest.imp[0].bidfloor;
+    mockResponse.seatbid[0].bid[0].price = bidRequest.imp[0].bidfloor + 0.1;
     resolve(mockResponse);
-	/*		var bidResponseBuilder = openrtb.getBuilder({
-    builderType: 'bidResponse'
-  });
-  
- resolve(bidResponseBuilder
-  .timestamp(moment.utc().format())
-  .status(1)
-  .id('1234567890')
-  .seatbid(build_seatbid_object(bidRequest))
-  .build());
-*/
  });
 };
 
@@ -422,7 +391,78 @@ const build_seatbid_object = (bidRequest) => {
     return seatbid;
 
 };
+//
+// Helper function to replace macros in bid response URLs
+// -----------------------------------------------------------------------------
 
+const replace_macros = (bidRequest,bidResponse) => {
+
+    var bidBuilder = openrtb.getBuilder({
+        builderType: 'bid'
+    });
+
+    bidBuilder.clearPrice(bidResponse.seatbid[0].bid[0].price);//);
+    var bid = bidBuilder.build();
+
+    var valuesMap =  {
+        '${AUCTION_BID_ID}': bidResponse.id,
+        '${AUCTION_PRICE}': bidResponse.seatbid[0].bid[0].price,
+        '${AUCTION_IMP_ID}': bidResponse.seatbid[0].bid[0].impid,
+        '${AUCTION_ID}': bidRequest.id
+    };
+
+
+    //winnotice URL
+    if(bidResponse.seatbid[0].bid[0].nurl){
+        var nurl_replaced = bid.replaceMacros(bidResponse.seatbid[0].bid[0].nurl,valuesMap);
+        bidResponse.seatbid[0].bid[0].nurl = nurl_replaced;
+    }
+    //billing notice URL
+    if(bidResponse.seatbid[0].bid[0].burl){
+        var burl_replaced = bid.replaceMacros(bidResponse.seatbid[0].bid[0].burl,valuesMap);
+        bidResponse.seatbid[0].bid[0].burl = burl_replaced;
+    }
+    //Loss notice URL
+    if(bidResponse.seatbid[0].bid[0].lurl){
+        var burl_replaced = bid.replaceMacros(bidResponse.seatbid[0].bid[0].lurl,valuesMap);
+        bidResponse.seatbid[0].bid[0].lurl = lurl_replaced;
+    }
+
+    //Loss notice URL
+    if(bidResponse.seatbid[0].bid[0].adm){
+        var adm_replaced = bid.replaceMacros(bidResponse.seatbid[0].bid[0].adm,valuesMap);
+        bidResponse.seatbid[0].bid[0].adm = adm_replaced;
+    }
+
+    return bidResponse;
+}
+
+//
+// Helper function to process bidresponse
+// -----------------------------------------------------------------------------
+
+const process_bid_response = (bidRequest,bidResponse) => {
+
+    return new Promise ((resolve, reject) => {
+
+        var bidResUpd =  replace_macros(bidRequest,bidResponse);
+
+        console.log("process_bid_response..bidResUpd",bidResUpd);
+        if(bidResUpd.seatbid[0].bid[0].adm){
+            console.log("process_bid_response..bidResUpd",bidResUpd.seatbid[0].bid[0].adm);
+            resolve(bidResUpd.seatbid[0].bid[0].adm);
+       }else{
+               requestHelper.get(bidResUpd.seatbid[0].bid[0].nurl, (error, response, body) => {
+                   if(response.statusCode === 200){
+                        resolve(body)
+                   }else{
+                        reject("caught error::"+error);
+                   }
+               });
+       }
+
+    });
+}
 	
 //
 // Register app's endpoints
@@ -474,12 +514,16 @@ var listener = app.listen(8080, function(){
 
 // Connect to mongodb database
 mongoose.connect('mongodb://localhost:27017/openrtb_db',{ useMongoClient: true });
-
+//Load Bidder URL Iand other nformation from DB
 openrtbDBController.loadBidders().then(function (bidders) {
     bidderInfoList = bidders;
     //console.log("bidderInfoList ::"+bidderInfoList);
     console.log("bidderInfoList length::"+bidderInfoList.length);
 });
+
+//
+// Helper function to create vedio mime object
+// -----------------------------------------------------------------------------
 
 const vedio_mimetypes = () => {
     console.log("inside vedio_mimetypes.... ");
