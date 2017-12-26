@@ -85,7 +85,7 @@ const openRtbAdaptor = (req, res) => {
 
     //Stpe1: Create OpenRTB BidRequest
     //Step2: Invoke Bidders passing BidRequest
-
+    //Step3: send ad content in response
     openrtbDBController.getImpression(queryData.id).then(function (impressionData) {
 
         logger.debug('impressionData from db is =>',impressionData.imp_dimension);
@@ -104,7 +104,6 @@ const openRtbAdaptor = (req, res) => {
 				res.json(error);
 	    })        
 	});
-		
 	
 };
 
@@ -113,26 +112,19 @@ const openRtbAdaptor = (req, res) => {
 // -----------------------------------------------------------------------------
 const build_json_bidrequest = (bidRequest,impressionData) => {
     return new Promise ((resolve, reject) => {
-		//logger.debug('Inside build_json_bidrequest----');
+
         var bidRequestBuilder = openrtb.getBuilder({
              builderType: 'bidRequest'
         });
   
-            bidRequestBuilder
-                .timestamp(moment.utc().format())
-                .id(uuidv1())
-                .at(2)
-                .imp(build_imp_object(impressionData));
-                if(build_site_object(impressionData)){
-                    bidRequestBuilder.site(build_site_object(impressionData));
-                }
-                if(build_app_object(impressionData)){
-                    bidRequestBuilder.app(build_app_object(impressionData));
-                }
-
-                 resolve(bidRequestBuilder.build());
-  
- 
+        bidRequestBuilder.timestamp(moment.utc().format()).id(uuidv1()).at(2).imp(build_imp_object(impressionData));
+        if(build_site_object(impressionData)){
+           bidRequestBuilder.site(build_site_object(impressionData));
+        }
+        if(build_app_object(impressionData)){
+           bidRequestBuilder.app(build_app_object(impressionData));
+        }
+        resolve(bidRequestBuilder.build());
  });
 };
 
@@ -167,11 +159,7 @@ const build_imp_object = (impressionData) => {
         var vedioBuilder = openrtb.getBuilder({
             builderType: 'video'
         });
-        var mimes = ["video/x-flv",
-            "video/mp4",
-            "video/x-ms-wmv",
-            "application/x-shockwave-flash",
-            "application/javascript"];
+        var mimes =vedio_mimetypes();
 
         vedioBuilder.mimes(mimes).w(impressionData.imp_dimension.w).h(impressionData.imp_dimension.h);
         impBuilder.video(vedioBuilder.build());
@@ -241,63 +229,53 @@ const build_app_object = (impressionData) => {
 	
 	callBidder: function(bidrequest){
 		
-	return new Promise ((resolve, reject) => {
-		
-		 var url = this.getBidderUrl(this.currentBidderIndex);
-	  
-	  const options = {
-         method: 'POST',
-         headers: {
-             'Content-Type': 'application/json',
-             'Accept': 'application/json',
-			 'x-openrtb-version': '2.5'
-         },
-         body: JSON.stringify(bidrequest)
-        };
-	
-fetch(url, options)
-    .then(function(res) {
-		if(!call_bidder.chekcForStatusCode(res)){
-		//if(res && !res.status === 204){		
-          return res.json();
-		}else{
-  			     logger.debug('sorry..Bid response is empty===>');
-   		  	     call_bidder.currentBidderIndex = call_bidder.currentBidderIndex+1;
+	    return new Promise ((resolve, reject) => {
+	         var url = this.getBidderUrl(this.currentBidderIndex);
+	         const options = {
+                      method: 'POST',
+                      headers: {
+                          'Content-Type': 'application/json',
+                          'Accept': 'application/json',
+                          'x-openrtb-version': '2.5'
+                      },
+                      body: JSON.stringify(bidrequest)
+             };
+
+	         fetch(url, options).then(function(res) {
+		             if(!call_bidder.chekcForStatusCode(res)){
+		                return res.json();
+		             }else{
+  			            logger.debug('sorry..Bid response has inavlid status code===>');
+   		  	            call_bidder.currentBidderIndex = call_bidder.currentBidderIndex+1;
 				  
-				 if(call_bidder.currentBidderIndex < bidderInfoList.length){
-  				    resolve(call_bidder.callBidder(bidrequest));
-				 }else{							  
-				   logger.debug('No more bidders available..serve default ad...');
-				 }
-			  
-		}  
-    }).then(function(res) {
-    logger.debug('Bid response is ===>',res);
-    if(res){
-        if(call_bidder.chekcForBidEmpty(res)){
-            logger.debug('sorry..Bid response is empty===>');
-            call_bidder.currentBidderIndex = call_bidder.currentBidderIndex+1;
-
-            if(call_bidder.currentBidderIndex < bidderInfoList.length){
-                resolve(call_bidder.callBidder(bidrequest));
-            }else{
-                logger.debug('No more bidders available..serve default ad...');
-            }
-        }else{
-
-
-            process_bid_response(bidrequest,res).then(adcontent => {
-                resolve(adcontent);
-            });
-
-        }
-  	}
-    }).catch(err => {
-        logger.debug('error inside call bidder ===>',err);
-    });
+				        if(call_bidder.currentBidderIndex < bidderInfoList.length){
+  				           resolve(call_bidder.callBidder(bidrequest));
+				        }else{
+				           logger.debug('No more bidders available..serve default ad...');
+				        }
+			         }
+	         }).then(function(res) {
+                     logger.debug('Bid response is ===>',res);
+                     if(res){
+                         if(call_bidder.chekcForBidEmpty(res)){
+                               logger.debug('sorry..Bid response is empty===>');
+                               call_bidder.currentBidderIndex = call_bidder.currentBidderIndex+1;
+                              if(call_bidder.currentBidderIndex < bidderInfoList.length){
+                                 resolve(call_bidder.callBidder(bidrequest));
+                               }else{
+                                 logger.debug('No more bidders available..serve default ad...');
+                              }
+                         }else{
+                              process_bid_response(bidrequest,res).then(adcontent => {
+                                          resolve(adcontent);
+                              });
+                         }
+  	                 }
+             }).catch(err => {
+                     logger.debug('error inside call bidder ===>',err);
+             });
      
-    });		
-     
+        });
 	},
 
 	getBidderUrl: function(index){
@@ -306,36 +284,36 @@ fetch(url, options)
 	},
 	
 	chekcForBidEmpty: function(bidResponse){
-		let bidResponseObj =  bidResponse;//JSON.parse(bidResponse.stringify());
-		                  if(!bidResponseObj ||  !bidResponseObj.seatbid || bidResponseObj.seatbid.length === 0 || (bidResponseObj.nbr &&    bidResponseObj.nbr > 0 )){
-	                          return true;	
-	                      }else{		
-                                      logger.debug('bidResponseObj.seatbid.length()==>',bidResponseObj.seatbid.length);
-	                                return false;	
-	                      }	
+		let bidResponseObj =  bidResponse;
+        if(!bidResponseObj ||  !bidResponseObj.seatbid || bidResponseObj.seatbid.length === 0 || (bidResponseObj.nbr &&    bidResponseObj.nbr > 0 )){
+	        return true;
+	    }else{
+             logger.debug('bidResponseObj.seatbid.length()==>',bidResponseObj.seatbid.length);
+	           return false;
+	    }
 	},
+
 	chekcForStatusCode: function(bidResponse){
-		                   logger.debug('bidResponse.status==>',bidResponse.status);
-                           if(!bidResponse)	   
-		                          return true;
+	    logger.debug('bidResponse.status==>',bidResponse.status);
+        logger.debug('bidResponse.body==>',bidResponse.headers);
 
-                       	   if(bidResponse.status === 204) return true;
+        if(!bidResponse)
+		  return true;
+   	    if(bidResponse.status === 204) return true;
         if(bidResponse.status === 400) return true;
-
-							return false;   
+		return false;
 	},
-	currentBidderIndex:	0
-	
-	
- 
+
+    currentBidderIndex:	0
+
  }
 
 //
 // Helper function to ceate user object
 // -----------------------------------------------------------------------------
 const build_user_json_object = (userid ) => {
-{//No field is manadatory..enite user object is optional
-   return{
+   {//No field is manadatory..enite user object is optional
+      return{
 	          "id":uuidv1(),
               "buyeruid":uuidv1(),
               "keywords":"sports, entertainment",
@@ -346,8 +324,8 @@ const build_user_json_object = (userid ) => {
                   "cookie_age":15
               }
       
-    };
-  }
+      };
+   }
 };
 
 
@@ -355,12 +333,10 @@ const construct_bid_response = (bidRequest) =>  {
 	
     return new Promise ((resolve, reject) => {
         mockResponse.seatbid[0].bid[0].impid =  bidRequest.imp[0].id;
-    mockResponse.seatbid[0].bid[0].price = bidRequest.imp[0].bidfloor + 0.1;
-    resolve(mockResponse);
- });
+        mockResponse.seatbid[0].bid[0].price = bidRequest.imp[0].bidfloor + 0.1;
+        resolve(mockResponse);
+    });
 };
-
-
 
 //
 // Helper function to create seatbid json object
@@ -443,27 +419,61 @@ const replace_macros = (bidRequest,bidResponse) => {
 
 const process_bid_response = (bidRequest,bidResponse) => {
 
-    return new Promise ((resolve, reject) => {
+    return new Promise((resolve, reject) => {
 
-        var bidResUpd =  replace_macros(bidRequest,bidResponse);
+        var bidResUpd = replace_macros(bidRequest, bidResponse);
+        console.log("process_bid_response..bidResUpd", bidResUpd);
+        if (bidResUpd.seatbid[0].bid[0].adm) {
+            console.log("process_bid_response..bidResUpd..adm::", bidResUpd.seatbid[0].bid[0].adm);
+            invoke_notice_url(bidResUpd).then(response => {
+                logger.info('Response from winnotice URL::', response);
+            }).catch(error => {
+                logger.info('Exception Response while invoking winnotice URL');
+            });
 
-        console.log("process_bid_response..bidResUpd",bidResUpd);
-        if(bidResUpd.seatbid[0].bid[0].adm){
-            console.log("process_bid_response..bidResUpd",bidResUpd.seatbid[0].bid[0].adm);
             resolve(bidResUpd.seatbid[0].bid[0].adm);
-       }else{
-               requestHelper.get(bidResUpd.seatbid[0].bid[0].nurl, (error, response, body) => {
-                   if(response.statusCode === 200){
-                        resolve(body)
-                   }else{
-                        reject("caught error::"+error);
-                   }
-               });
-       }
+        } else {
+            console.log("process_bid_response..inside invoke notice url and wait for response...=>");
+            invoke_notice_url(bidResUpd.seatbid[0].bid[0].nurl).then(response => {
+                if (!response.includes("EXCEPTION::")) {
+                    resolve(response);
+                } else {
 
+                    var error = '<a href="http://adserver.com/click?adid=12345&tracker=${CLICK_URL:URLENCODE}&AUCTION_BID_ID=${AUCTION_BID_ID}"><img src="win-notice-error.jpg"/></a>';
+                    resolve(error);
+                }
+            }).catch(error => {
+                var error = '<a href="http://adserver.com/click?adid=12345&tracker=${CLICK_URL:URLENCODE}&AUCTION_BID_ID=${AUCTION_BID_ID}"><img src="win-notice-error.jpg"/></a>';
+                resolve(error);
+
+            });
+        }
     });
 }
-	
+//
+// Helper function to invoke notice URL
+// -----------------------------------------------------------------------------
+
+const invoke_notice_url = (bidResUpd) => {
+
+    return new Promise ((resolve, reject) => {
+
+            requestHelper.get(bidResUpd.seatbid[0].bid[0].nurl, (error, response, body) => {
+
+                if (error) {
+                    resolve("EXCEPTION::caught error while calling notice url");
+                } else if (!response) {
+                    resolve("EXCEPTION::invalid response while calling notice url");
+                }else if(response.statusCode === 200){
+                    resolve(body)
+                }else{
+                    resolve ("EXCEPTION::invalid response code[" + response.statusCode + "]recieved while calling notice url");
+                }
+            })
+    });
+}
+
+
 //
 // Register app's endpoints
 // -----------------------------------------------------------------------------
@@ -527,11 +537,10 @@ openrtbDBController.loadBidders().then(function (bidders) {
 
 const vedio_mimetypes = () => {
     console.log("inside vedio_mimetypes.... ");
-    return {
-             "mimes":[
-                  "video/x-flv",
-                  "video/mp4",
-                  "video/x-ms-wmv"
-             ]
-        };
+    var mimesList = ["video/x-flv",
+        "video/mp4",
+        "video/x-ms-wmv",
+        "application/x-shockwave-flash",
+        "application/javascript"];
+    return mimesList;
 }

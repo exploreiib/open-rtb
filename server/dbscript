@@ -83,3 +83,10 @@ db.impressions.insert({imp_id : 'IMPID04',
   bidder_url: 'http://bidder.mamrtb.com/rtb/bid/GlobalAdSpace',
   bidder_priority: 0
  });
+
+       db.bidders.insert({
+   bidder_id: 'BID_ID_06',
+   bidder_name: 'GBSP',
+   bidder_url: 'http://rtb.ato.mx/bid?s=167',
+   bidder_priority: -1
+  });
